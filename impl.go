@@ -5,9 +5,22 @@ import (
 	"unicode/utf8"
 )
 
+/*
 import (
 	"github.com/iNamik/go_pkg/runes"
 )
+*/
+
+// IndexRune returns the index of the first occurrence in runes of the given rune.
+// It returns -1 if rune is not present in runes.
+func LexIndexRune(runes []rune, r rune) int {
+	for i, c := range runes {
+		if c == r {
+			return i
+		}
+	}
+	return -1
+}
 
 // Lexer::NextToken - Returns the next token from the reader.
 func (l *lexer) NextToken() *Token {
@@ -149,7 +162,7 @@ func (l *lexer) MatchZeroOrOneBytes(match []byte) bool {
 
 // Lexer::MatchZeroOrOneRunes
 func (l *lexer) MatchZeroOrOneRunes(match []rune) bool {
-	if r := l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) >= 0 {
+	if r := l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) >= 0 {
 		l.NextRune()
 	}
 	return true
@@ -181,7 +194,7 @@ func (l *lexer) MatchZeroOrMoreBytes(match []byte) bool {
 
 // Lexer::MatchZeroOrMoreRunes
 func (l *lexer) MatchZeroOrMoreRunes(match []rune) bool {
-	for r := l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) >= 0; r = l.PeekRune(0) {
+	for r := l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) >= 0; r = l.PeekRune(0) {
 		l.NextRune()
 	}
 	return true
@@ -206,7 +219,7 @@ func (l *lexer) MatchOneBytes(match []byte) bool {
 
 // Lexer::MatchOneRunes
 func (l *lexer) MatchOneRunes(match []rune) bool {
-	if r := l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) >= 0 {
+	if r := l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) >= 0 {
 		l.NextRune()
 		return true
 	}
@@ -247,9 +260,9 @@ func (l *lexer) MatchOneOrMoreBytes(match []byte) bool {
 // Lexer::MatchOneOrMoreRunes
 func (l *lexer) MatchOneOrMoreRunes(match []rune) bool {
 	var r rune
-	if r = l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) >= 0 {
+	if r = l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) >= 0 {
 		l.NextRune()
-		for r = l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) >= 0; r = l.PeekRune(0) {
+		for r = l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) >= 0; r = l.PeekRune(0) {
 			l.NextRune()
 		}
 		return true
@@ -292,7 +305,7 @@ func (l *lexer) MatchMinMaxBytes(match []byte, min int, max int) bool {
 func (l *lexer) MatchMinMaxRunes(match []rune, min int, max int) bool {
 	marker := l.Marker()
 	count := 0
-	for r := l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) >= 0; r = l.PeekRune(0) {
+	for r := l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) >= 0; r = l.PeekRune(0) {
 		l.NextRune()
 		count++
 		if max > 0 && count >= max { // Check here to avoid unused PeekRune()
@@ -335,7 +348,7 @@ func (l *lexer) NonMatchOneBytes(match []byte) bool {
 
 // Lexer::NonMatchOneRunes
 func (l *lexer) NonMatchOneRunes(match []rune) bool {
-	if r := l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) == -1 {
+	if r := l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) == -1 {
 		l.NextRune()
 		return true
 	}
@@ -367,9 +380,9 @@ func (l *lexer) NonMatchOneOrMoreBytes(match []byte) bool {
 // Lexer::NonMatchOneOrMoreRunes
 func (l *lexer) NonMatchOneOrMoreRunes(match []rune) bool {
 	var r rune
-	if r = l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) == -1 {
+	if r = l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) == -1 {
 		l.NextRune()
-		for r = l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) == -1; r = l.PeekRune(0) {
+		for r = l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) == -1; r = l.PeekRune(0) {
 			l.NextRune()
 		}
 		return true
@@ -400,7 +413,7 @@ func (l *lexer) NonMatchZeroOrOneBytes(match []byte) bool {
 
 // Lexer::NonMatchZeroOrOneRunes
 func (l *lexer) NonMatchZeroOrOneRunes(match []rune) bool {
-	if r := l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) == -1 {
+	if r := l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) == -1 {
 		l.NextRune()
 	}
 	return true
@@ -424,7 +437,7 @@ func (l *lexer) NonMatchZeroOrMoreBytes(match []byte) bool {
 
 // Lexer::NonMatchZeroOrMoreRunes
 func (l *lexer) NonMatchZeroOrMoreRunes(match []rune) bool {
-	for r := l.PeekRune(0); r != RuneEOF && runes.IndexRune(match, r) == -1; r = l.PeekRune(0) {
+	for r := l.PeekRune(0); r != RuneEOF && LexIndexRune(match, r) == -1; r = l.PeekRune(0) {
 		l.NextRune()
 	}
 	return true
