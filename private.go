@@ -6,8 +6,8 @@ import (
 	"unicode/utf8"
 )
 import (
-	"github.com/iNamik/go_container/queue"
-	"github.com/iNamik/go_pkg/bufio/bleeder"
+	"github.com/jbowles/go_lexer/Godeps/_workspace/src/github.com/iNamik/go_container/queue"
+	"github.com/jbowles/go_lexer/Godeps/_workspace/src/github.com/iNamik/go_pkg/bufio/bleeder"
 )
 
 const defaultBufSize = 1024 //4096
