@@ -6,14 +6,14 @@ import (
 	"unicode/utf8"
 )
 import (
-	"github.com/jbowles/go_lexer/Godeps/_workspace/src/github.com/iNamik/go_container/queue"
-	"github.com/jbowles/go_lexer/Godeps/_workspace/src/github.com/iNamik/go_pkg/bufio/bleeder"
+	"github.com/iNamik/go_container/queue"
+	"github.com/iNamik/go_pkg/bufio/bleeder"
 )
 
 const defaultBufSize = 1024 //4096
 
 // lexer holds the state of the scanner.
-type lexer struct {
+type lex struct {
 	ioReader   io.Reader     // the original reader passed into New()
 	reader     *bufio.Reader // reader buffer
 	autoExpand bool          // should we auto-expand buffered reader?
@@ -33,9 +33,9 @@ type lexer struct {
 }
 
 // newLexer
-func newLexer(startState StateFn, reader io.Reader, readerBufLen int, autoExpand bool, channelCap int) Lexer {
+func newLex(startState StateFn, reader io.Reader, readerBufLen int, autoExpand bool, channelCap int) Lexer {
 	r := bufio.NewReaderSize(reader, readerBufLen)
-	l := &lexer{
+	l := &lex{
 		ioReader:   reader,
 		reader:     r,
 		bufLen:     readerBufLen,
@@ -53,7 +53,7 @@ func newLexer(startState StateFn, reader io.Reader, readerBufLen int, autoExpand
 }
 
 // ensureRuneLen
-func (l *lexer) ensureRuneLen(n int) bool {
+func (l *lex) ensureRuneLen(n int) bool {
 	for l.runes.Len() < n {
 		// If auto-expand is enabled and
 		// If our peek buffer is full (suggesting we are likely not at eof) and
@@ -76,7 +76,7 @@ func (l *lexer) ensureRuneLen(n int) bool {
 }
 
 // emit
-func (l *lexer) emit(t TokenType, emitBytes bool) {
+func (l *lex) emit(t TokenType, emitBytes bool) {
 	if TokenTypeEOF == t {
 		if l.eof {
 			panic("illegal state: EmitEOF() already called")
@@ -97,7 +97,7 @@ func (l *lexer) emit(t TokenType, emitBytes bool) {
 }
 
 // consume
-func (l *lexer) consume(keepBytes bool) []byte {
+func (l *lex) consume(keepBytes bool) []byte {
 	var b []byte
 	if keepBytes {
 		b = make([]byte, l.tokenLen)
@@ -131,7 +131,7 @@ func (l *lexer) consume(keepBytes bool) []byte {
 }
 
 // updatePeekBytes
-func (l *lexer) updatePeekBytes() {
+func (l *lex) updatePeekBytes() {
 	var err error
 	l.peekBytes, err = l.reader.Peek(l.bufLen)
 	if err != nil && err != bufio.ErrBufferFull && err != io.EOF {

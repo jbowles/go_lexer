@@ -1,6 +1,6 @@
 /*
 Package rangeutil provides services for conversion and iteration of range
-specifications for use with iNamik/go_lexer
+specifications for use with lexer
 
 Currently, a 'range specifiction' is defined as a string of unicode characters,
 with the ability to specify a range of chararacters by using a '-' between two

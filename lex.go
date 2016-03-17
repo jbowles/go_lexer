@@ -199,20 +199,20 @@ type Lexer interface {
 
 // New returns a new Lexer object with an unlimited read-buffer
 func New(startState StateFn, reader io.Reader, channelCap int) Lexer {
-	return newLexer(startState, reader, defaultBufSize, true, channelCap)
+	return newLex(startState, reader, defaultBufSize, true, channelCap)
 }
 
 // NewSize returns a new Lexer object for the specified reader and read-buffer size
 func NewSize(startState StateFn, reader io.Reader, readerBufLen int, channelCap int) Lexer {
-	return newLexer(startState, reader, readerBufLen, false, channelCap)
+	return newLex(startState, reader, readerBufLen, false, channelCap)
 }
 
 // NewFromString returns a new Lexer object for the specified string
 func NewFromString(startState StateFn, input string, channelCap int) Lexer {
-	return newLexer(startState, strings.NewReader(input), len(input), false, channelCap)
+	return newLex(startState, strings.NewReader(input), len(input), false, channelCap)
 }
 
 // NewFromBytes returns a new Lexer object for the specified byte array
 func NewFromBytes(startState StateFn, input []byte, channelCap int) Lexer {
-	return newLexer(startState, bytes.NewReader(input), len(input), false, channelCap)
+	return newLex(startState, bytes.NewReader(input), len(input), false, channelCap)
 }
