@@ -1,218 +1,140 @@
 package lexer
 
 import (
-	"bytes"
+	"bufio"
 	"io"
-	"strings"
+	"unicode/utf8"
+)
+import (
+	"github.com/iNamik/go_container/queue"
+	"github.com/iNamik/go_pkg/bufio/bleeder"
 )
 
-// TokenType identifies the type of lex tokens.
-type TokenType int
+const defaultBufSize = 1024 //4096
 
-// Token represents a token (with optional text string) returned from the scanner.
-type Token struct {
-	typ    TokenType
-	bytes  []byte
-	line   int
-	column int
+// lexer holds the state of the scanner.
+type lex struct {
+	ioReader   io.Reader     // the original reader passed into New()
+	reader     *bufio.Reader // reader buffer
+	autoExpand bool          // should we auto-expand buffered reader?
+	bufLen     int           // reader buffer len
+	line       int           // current line in steram
+	column     int           // current column within current line
+	peekBytes  []byte        // cache of bufio.Reader.Peek()
+	peekPos    int
+	tokenLen   int
+	runes      queue.Interface // rune buffer
+	pos        int
+	sequence   int         // Incremented after each emit/ignore - used to validate markers
+	state      StateFn     // the next lexing function to enter
+	tokens     chan *Token // channel of scanned tokens.
+	eofToken   *Token
+	eof        bool
 }
 
-// Type returns the TokenType of the token
-func (t *Token) Type() TokenType { return t.typ }
-
-// Bytes returns the byte array associated with the token, or nil if none
-func (t *Token) Bytes() []byte { return t.bytes }
-
-// EOF returns true if the TokenType == TokenTypeEOF
-func (t *Token) EOF() bool { return TokenTypeEOF == t.typ }
-
-// Line returns the line number of the token
-func (t *Token) Line() int { return t.line }
-
-// Column returns the column number of the token
-func (t *Token) Column() int { return t.column }
-
-// TokenType representing EOF
-const TokenTypeEOF TokenType = -1
-
-// TokenType representing an unknown rune(s)
-const TokenTypeUnknown TokenType = -2
-
-// Rune represending EOF
-const RuneEOF = -1
-
-// StateFn represents the state of the scanner as a function that returns the next state.
-type StateFn func(Lexer) StateFn
-
-// MatchFn represents a callback function for matching runes that are not
-// feasable for a range
-type MatchFn func(rune) bool
-
-// Marker stores the state of the lexer to allow rewinding
-type Marker struct {
-	sequence int
-	pos      int
-	tokenLen int
-	line     int
-	column   int
+// newLexer
+func newLex(startState StateFn, reader io.Reader, readerBufLen int, autoExpand bool, channelCap int) Lexer {
+	r := bufio.NewReaderSize(reader, readerBufLen)
+	l := &lex{
+		ioReader:   reader,
+		reader:     r,
+		bufLen:     readerBufLen,
+		autoExpand: autoExpand,
+		runes:      queue.New(4), // 4 is just a nice number that seems appropriate
+		state:      startState,
+		tokens:     make(chan *Token, channelCap),
+		line:       1,
+		column:     0,
+		eofToken:   nil,
+		eof:        false,
+	}
+	l.updatePeekBytes()
+	return l
 }
 
-// lexer.Lexer helps you tokenize bytes
-type Lexer interface {
+// ensureRuneLen
+func (l *lex) ensureRuneLen(n int) bool {
+	for l.runes.Len() < n {
+		// If auto-expand is enabled and
+		// If our peek buffer is full (suggesting we are likely not at eof) and
+		// If we don't have enough bytes left to safely decode a rune,
+		if l.autoExpand == true && len(l.peekBytes) == l.bufLen && (len(l.peekBytes)-l.peekPos) < utf8.UTFMax {
+			l.bufLen *= 2
+			bl := bleeder.New(l.reader, l.ioReader)
+			l.reader = bufio.NewReaderSize(bl, l.bufLen)
+			l.updatePeekBytes()
+		}
+		rune, size := utf8.DecodeRune(l.peekBytes[l.peekPos:])
+		if utf8.RuneError == rune {
+			return false
+		}
+		l.runes.Add(rune)
+		l.peekPos += size
+	}
 
-	// PeekRune allows you to look ahead at runes without consuming them
-	PeekRune(int) rune
-
-	// NetRune consumes and returns the next rune in the input
-	NextRune() rune
-
-	// BackupRune un-conumes the last rune from the input
-	BackupRune()
-
-	// BackupRunes un-consumes the last n runes from the input
-	BackupRunes(int)
-
-	// NewLine increments the line number counter, resets the column counter
-	NewLine()
-
-	// Line returns the current line number, 1-based
-	Line() int
-
-	// Column returns the current column number, 1-based
-	Column() int
-
-	// EmitToken emits a token of the specified type, consuming matched runes
-	// without emitting them
-	EmitToken(TokenType)
-
-	// EmitTokenWithBytes emits a token along with all the consumed runes
-	EmitTokenWithBytes(TokenType)
-
-	// IgnoreToken ignores the consumed bytes without emitting any tokens
-	IgnoreToken()
-
-	// EmitEOF emits a token of type TokenEOF
-	EmitEOF()
-
-	// NextToken retrieves the next emmitted token from the input
-	NextToken() *Token
-
-	// Marker returns a marker that you can use to reset the lexer state later
-	Marker() *Marker
-
-	// CanReset confirms if the marker is still valid
-	CanReset(*Marker) bool
-
-	// Reset resets the lexer state to the specified marker
-	Reset(*Marker)
-
-	// MatchZeroOrOneBytes consumes the next rune if it matches, always returning true
-	MatchZeroOrOneBytes([]byte) bool
-
-	// MatchZeroOrOneRuness consumes the next rune if it matches, always returning true
-	MatchZeroOrOneRunes([]rune) bool
-
-	// MatchZeroOrOneRune consumes the next rune if it matches, always returning true
-	MatchZeroOrOneRune(rune) bool
-
-	// MatchZeroOrOneFunc consumes the next rune if it matches, always returning true
-	MatchZeroOrOneFunc(MatchFn) bool
-
-	// MatchZeroOrMoreBytes consumes a run of matching runes, always returning true
-	MatchZeroOrMoreBytes([]byte) bool
-
-	// MatchZeroOrMoreRunes consumes a run of matching runes, always returning true
-	MatchZeroOrMoreRunes([]rune) bool
-
-	// MatchZeroOrMoreFunc consumes a run of matching runes, always returning true
-	MatchZeroOrMoreFunc(MatchFn) bool
-
-	// MatchOneBytes consumes the next rune if its in the list of bytes
-	MatchOneBytes([]byte) bool
-
-	// MatchOneRune consumes the next rune if its in the list of bytes
-	MatchOneRunes([]rune) bool
-
-	// MatchOneRune consumes the next rune if it matches
-	MatchOneRune(rune) bool
-
-	// MatchOneFunc consumes the next rune if it matches
-	MatchOneFunc(MatchFn) bool
-
-	// MatchOneOrMoreBytes consumes a run of matching runes
-	MatchOneOrMoreBytes([]byte) bool
-
-	// MatchOneOrMoreRunes consumes a run of matching runes
-	MatchOneOrMoreRunes([]rune) bool
-
-	// MatchOneOrMoreFunc consumes a run of matching runes
-	MatchOneOrMoreFunc(MatchFn) bool
-
-	// MatchMinMaxBytes consumes a specified run of matching runes
-	MatchMinMaxBytes([]byte, int, int) bool
-
-	// MatchMinMaxRunes consumes a specified run of matching runes
-	MatchMinMaxRunes([]rune, int, int) bool
-
-	// MatchMinMaxFunc consumes a specified run of matching runes
-	MatchMinMaxFunc(MatchFn, int, int) bool
-
-	// NonMatchZeroOrOneBytes consumes the next rune if it does not match, always returning true
-	NonMatchZeroOrOneBytes([]byte) bool
-
-	// NonMatchZeroOrOneRunes consumes the next rune if it does not match, always returning true
-	NonMatchZeroOrOneRunes([]rune) bool
-
-	// NonMatchZeroOrOneFunc consumes the next rune if it does not match, always returning true
-	NonMatchZeroOrOneFunc(MatchFn) bool
-
-	// NonMatchZeroOrMoreBytes consumes a run of non-matching runes, always returning true
-	NonMatchZeroOrMoreBytes([]byte) bool
-
-	// NonMatchZeroOrMoreRunes consumes a run of non-matching runes, always returning true
-	NonMatchZeroOrMoreRunes([]rune) bool
-
-	// NonMatchZeroOrMoreFunc consumes a run of non-matching runes, always returning true
-	NonMatchZeroOrMoreFunc(MatchFn) bool
-
-	// NonMatchOneBytes consumes the next rune if its NOT in the list of bytes
-	NonMatchOneBytes([]byte) bool
-
-	// NonMatchOneRunes consumes the next rune if its NOT in the list of runes
-	NonMatchOneRunes([]rune) bool
-
-	// NonMatchOneFunc consumes the next rune if it does NOT match
-	NonMatchOneFunc(MatchFn) bool
-
-	// NonMatchOneOrMoreBytes consumes a run of non-matching runes
-	NonMatchOneOrMoreBytes([]byte) bool
-
-	// NonMatchOneOrMoreRunes consumes a run of non-matching runes
-	NonMatchOneOrMoreRunes([]rune) bool
-
-	// NonMatchOneOrMoreFunc consumes a run of non-matching runes
-	NonMatchOneOrMoreFunc(MatchFn) bool
-
-	// MatchEOF tries to match the next rune against RuneEOF
-	MatchEOF() bool
+	return l.runes.Len() >= n
 }
 
-// New returns a new Lexer object with an unlimited read-buffer
-func New(startState StateFn, reader io.Reader, channelCap int) Lexer {
-	return newLex(startState, reader, defaultBufSize, true, channelCap)
+// emit
+func (l *lex) emit(t TokenType, emitBytes bool) {
+	if TokenTypeEOF == t {
+		if l.eof {
+			panic("illegal state: EmitEOF() already called")
+		}
+		l.consume(false)
+		l.eofToken = &Token{typ: TokenTypeEOF, bytes: nil, line: l.line, column: l.column + 1}
+		l.eof = true
+		l.tokens <- l.eofToken
+	} else {
+		line := l.line
+
+		column := l.column - (l.tokenLen - 1)
+
+		b := l.consume(emitBytes)
+
+		l.tokens <- &Token{typ: t, bytes: b, line: line, column: column}
+	}
 }
 
-// NewSize returns a new Lexer object for the specified reader and read-buffer size
-func NewSize(startState StateFn, reader io.Reader, readerBufLen int, channelCap int) Lexer {
-	return newLex(startState, reader, readerBufLen, false, channelCap)
+// consume
+func (l *lex) consume(keepBytes bool) []byte {
+	var b []byte
+	if keepBytes {
+		b = make([]byte, l.tokenLen)
+		n, err := l.reader.Read(b)
+		if err != nil || n != l.tokenLen {
+			panic("Unexpected problem in bufio.Reader.Read(): " + err.Error())
+		}
+	} else {
+		// May be better to just grab string and ignore, or always emit bytes
+		for ; l.tokenLen > 0; l.tokenLen-- {
+			_, err := l.reader.ReadByte()
+			if err != nil {
+				panic("Unexpected problem in bufio.Reader.ReadByte(): " + err.Error())
+			}
+		}
+		b = nil
+	}
+	l.sequence++
+
+	l.pos = 0
+
+	l.tokenLen = 0
+
+	l.peekPos = 0
+
+	l.runes.Clear()
+
+	l.updatePeekBytes()
+
+	return b
 }
 
-// NewFromString returns a new Lexer object for the specified string
-func NewFromString(startState StateFn, input string, channelCap int) Lexer {
-	return newLex(startState, strings.NewReader(input), len(input), false, channelCap)
-}
-
-// NewFromBytes returns a new Lexer object for the specified byte array
-func NewFromBytes(startState StateFn, input []byte, channelCap int) Lexer {
-	return newLex(startState, bytes.NewReader(input), len(input), false, channelCap)
+// updatePeekBytes
+func (l *lex) updatePeekBytes() {
+	var err error
+	l.peekBytes, err = l.reader.Peek(l.bufLen)
+	if err != nil && err != bufio.ErrBufferFull && err != io.EOF {
+		panic(err)
+	}
 }
